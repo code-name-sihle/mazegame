@@ -9,8 +9,13 @@ let prevTime = performance.now();
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 let player, playerHeight = 1.8;
+let isPaused = false;
 
+let thirdPersonCamera;
+let isThirdPerson = false;
+const cameraOffset = new THREE.Vector3(0, 2, 5);
 let currentLevel = 0;
+
 const levels = [
     { name: "Easy", maze: 'maze_easy.gltf' },
     { name: "Medium", maze: 'maze_medium.gltf' },
@@ -40,6 +45,9 @@ function init() {
     controls = new PointerLockControls(camera, document.body);
     scene.add(controls.getObject());
 
+    thirdPersonCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    thirdPersonCamera.position.set(0, playerHeight + cameraOffset.y, cameraOffset.z);
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
@@ -49,10 +57,6 @@ function init() {
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     window.addEventListener('resize', onWindowResize, false);
-
-    document.getElementById('startGameButton').addEventListener('click', () => {
-        loadMaze(levels[currentLevel].maze);
-    });
 
     showMainMenu();
 }
@@ -79,6 +83,7 @@ function loadMaze(mazePath) {
 function startGame() {
     gameState = 'playing';
     isGameActive = true;
+    isPaused = false;
     startTime = performance.now();
     updateLevelInfo();
     document.getElementById('mainMenu').style.display = 'none';
@@ -105,7 +110,7 @@ function nextLevel() {
 }
 
 function updateLeaderboard(time) {
-    leaderboard.addScore(currentLevel, time);
+    leaderboard.addScore(levels[currentLevel].name, time);
     leaderboard.displayLeaderboard();
 }
 
@@ -114,7 +119,7 @@ function animate() {
 
     const time = performance.now();
 
-    if (controls.isLocked === true && gameState === 'playing') {
+    if (!isPaused && controls.isLocked === true && gameState === 'playing') {
         const delta = (time - prevTime) / 1000;
 
         velocity.x -= velocity.x * 10.0 * delta;
@@ -128,12 +133,19 @@ function animate() {
         if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
         if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
 
-        if (!checkCollisions(controls.getObject().position, velocity, delta)) {
+        const collision = checkCollisions(controls.getObject().position, velocity, delta);
+
+        if (!collision) {
             controls.moveRight(-velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
         }
 
         controls.getObject().position.y += (velocity.y * delta);
+       
+        if (isThirdPerson) {
+            thirdPersonCamera.position.copy(player.position).add(cameraOffset);
+            thirdPersonCamera.lookAt(player.position);
+        }
 
         if (controls.getObject().position.y < playerHeight) {
             velocity.y = 0;
@@ -152,11 +164,11 @@ function animate() {
 
     prevTime = time;
 
-    if (isGameActive) {
+    if (isGameActive && !isPaused) {
         updateTimer();
     }
 
-    renderer.render(scene, camera);
+    renderer.render(scene, isThirdPerson ? thirdPersonCamera : camera);
 }
 
 function checkCollisions(position, velocity, delta) {
@@ -166,9 +178,6 @@ function checkCollisions(position, velocity, delta) {
         position.z - velocity.z * delta
     );
     
-    const mazeWalls = scene.getObjectByName('mazeWalls');
-    if (!mazeWalls) return false;
-
     const raycaster = new THREE.Raycaster();
     const directions = [
         new THREE.Vector3(1, 0, 0),
@@ -177,11 +186,19 @@ function checkCollisions(position, velocity, delta) {
         new THREE.Vector3(0, 0, -1)
     ];
 
+    const collisionDistance = 0.5; // Adjust this value as needed
+
     for (let direction of directions) {
         raycaster.set(nextPosition, direction);
-        const intersects = raycaster.intersectObjects(mazeWalls.children, true);
-        if (intersects.length > 0 && intersects[0].distance < 0.5) {
-            return true;
+        const intersects = raycaster.intersectObjects(scene.children, true);
+        
+        for (let intersect of intersects) {
+            if (intersect.object.name === 'mazeWalls' && intersect.distance < collisionDistance) {
+                // Collision detected, adjust velocity
+                if (direction.x !== 0) velocity.x = 0;
+                if (direction.z !== 0) velocity.z = 0;
+                return true;
+            }
         }
     }
     
@@ -227,7 +244,37 @@ function restartGame() {
 
 function showMainMenu() {
     gameState = 'mainMenu';
+    document.getElementById('mainMenu').innerHTML = `
+        <h1>Maze Runner</h1>
+        <button id="startGameButton">Start Game</button>
+        <button id="resumeGameButton" style="display: none;">Resume Game</button>
+        <button id="optionsButton">Options</button>
+        <button id="exitGameButton">Exit Game</button>
+    `;
     document.getElementById('mainMenu').style.display = 'block';
+
+    document.getElementById('startGameButton').addEventListener('click', () => loadMaze(levels[currentLevel].maze));
+    document.getElementById('resumeGameButton').addEventListener('click', resumeGame);
+    document.getElementById('optionsButton').addEventListener('click', showOptions);
+    document.getElementById('exitGameButton').addEventListener('click', exitGame);
+}
+
+function resumeGame() {
+    if (gameState === 'playing') {
+        isPaused = false;
+        controls.lock();
+        document.getElementById('mainMenu').style.display = 'none';
+    }
+}
+
+function showOptions() {
+    // Implement options menu
+    console.log('Options menu not implemented yet');
+}
+
+function exitGame() {
+    // Implement exit game functionality
+    console.log('Exit game not implemented yet');
 }
 
 function onKeyDown(event) {
@@ -251,6 +298,17 @@ function onKeyDown(event) {
         case 'Space':
             if (canJump === true) velocity.y += 350;
             canJump = false;
+            break;
+        case 'KeyV':
+            isThirdPerson = !isThirdPerson;
+            break;
+        case 'Escape':
+            if (gameState === 'playing') {
+                isPaused = true;
+                controls.unlock();
+                document.getElementById('resumeGameButton').style.display = 'block';
+                showMainMenu();
+            }
             break;
     }
 }
@@ -279,6 +337,8 @@ function onKeyUp(event) {
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    thirdPersonCamera.aspect = window.innerWidth / window.innerHeight;
+    thirdPersonCamera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 

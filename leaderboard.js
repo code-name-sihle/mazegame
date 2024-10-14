@@ -3,20 +3,18 @@ class Leaderboard {
         this.scores = JSON.parse(localStorage.getItem('mazeGameLeaderboard')) || {};
     }
 
-    addScore(level, time) {
-        const key = `level${level + 1}`;
-        if (!this.scores[key]) {
-            this.scores[key] = [];
+    addScore(levelName, time) {
+        if (!this.scores[levelName]) {
+            this.scores[levelName] = [];
         }
-        this.scores[key].push(time);
-        this.scores[key].sort((a, b) => a - b);
-        this.scores[key] = this.scores[key].slice(0, 5); // Keep only top 5 scores
+        this.scores[levelName].push(time);
+        this.scores[levelName].sort((a, b) => a - b);
+        this.scores[levelName] = this.scores[levelName].slice(0, 5); // Keep only top 5 scores
         this.saveScores();
     }
 
-    getScores(level) {
-        const key = `level${level + 1}`;
-        return this.scores[key] || [];
+    getScores(levelName) {
+        return this.scores[levelName] || [];
     }
 
     saveScores() {
@@ -26,11 +24,11 @@ class Leaderboard {
     displayLeaderboard() {
         const leaderboardDiv = document.getElementById('leaderboard');
         leaderboardDiv.innerHTML = '<h2>Leaderboard</h2>';
-        for (let i = 0; i < 3; i++) {
-            const key = `level${i + 1}`;
-            const scores = this.scores[key] || [];
+        const levels = ["Easy", "Medium", "Hard"];
+        for (let levelName of levels) {
+            const scores = this.scores[levelName] || [];
             const leaderboardHtml = `
-                <h3>Level ${i + 1}</h3>
+                <h3>${levelName}</h3>
                 <ol>
                     ${scores.map(score => `<li>${score.toFixed(2)} seconds</li>`).join('')}
                 </ol>
